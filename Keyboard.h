@@ -1,3 +1,5 @@
+#ifndef KEYBOARD_H
+#define KEYBOARD_H  1
 /**********************************************
 / In the keyboard hardware setup, put diodes on
 / the outPins to help the rollover work better.
@@ -7,23 +9,22 @@
 / or more keys at the same time
 /
 / to use:
-/   #import "Keyboard.h"
+/   #include "Keyboard.h"
 /   create a Keyboard object, using this constructor:
 /     Keyboard(int noOutPins, unsigned int* outPins, int noInPins, unsigned int* inPins,
 /             const char* keyMap, long debounceTime = DEBOUNCE_TIME, long repeatDelay = REPEAT_DELAY, long repeatTime = REPEAT_TIME,
 /             char shiftKey = '\0', const char* shiftKeyMap = NULL, int shiftLED = -1)
 /     e.g.
-/         Keyboard* kb = new Keyboard(4, outPins, 4, inPins, "123A456B789C*0#D");
+/         Keyboard kb(4, outPins, 4, inPins, "123A456B789C*0#D");
 /   somewhere in your loop() function, call the keyboard loop() function, e.g.
 /     void loop() {
-/         kb->loop();
+/         kb.loop();
 /         ...other loop processing, including:
-/         key = kb->getKey();
+/         key = kb.getKey();
 /         if (key) {
 /             ...process the key
 /         }
 /     }
-/
 / **********************************************/
 
 // choose how you want the shift key to operate
@@ -36,14 +37,14 @@
 // press and hold shift key, all keypresses made during shift-hold will be shifted until shift key is released
 #define SHIFT_HOLD  3
 // set SHIFT_KEY functionality here to one of the settings above
-#define SHIFT_KEY  SHIFT_HOLD
+#define SHIFT_KEY  SHIFT_ONE
 
 // set the size of the key buffer (it actually holds one less than this, and holds both presses and releases)
 // if two or more keys are held down simultaneously, there values will repeat intermingled, e.g. "abababababcabcabcabcabc"
 #define KEY_ROLLOVER  9
 
 // define default values for how the keys behave (debouncing and repeating -- all times in ms)
-#define DEBOUNCE_TIME 50
+#define DEBOUNCE_TIME 20
 #define REPEAT_DELAY  300
 #define REPEAT_TIME   20
 
@@ -119,9 +120,9 @@ class Keyboard {
       enableKeyboardPins();
     }
 
+    void  loop(unsigned long t = 0);
     char  getKey();
-//    int   getChange();
-    void  loop();
+    bool  getAction(Action& action) {return m_actions.get(action);}
     int   actionToKey(Action a) {return (a.m_shift ? m_shiftKeyMap[a.m_index] : m_keyMap[a.m_index]);}
 
   private:
@@ -131,7 +132,6 @@ class Keyboard {
     void setShiftLED() {if (m_shiftLED >= 0) m_shifted ? digitalWrite(m_shiftLED, HIGH) : digitalWrite(m_shiftLED, LOW);}
     // put an action into the action buffer
     bool putAction(Action action) {return m_actions.put(action);}
-    bool getAction(Action& action) {return m_actions.get(action);}
     
     int           m_noOutPins;
     int           m_noInPins;
@@ -160,7 +160,13 @@ void Keyboard::enableKeyboardPins() {
   }
   // initialize the input pins with pullup resistors
   for (int i = 0; i < m_noInPins; i++) {
-    pinMode(m_inPins[i], INPUT_PULLUP);
+    if (m_inPins[i] == A6 || m_inPins[i] == A7) {
+      // analog pins A6-A7 (on Nanos) need to have external pullups attached
+      pinMode(m_inPins[i], INPUT);    // a resistor value of about 33k should be good
+    } else {
+      // configure digital pins (and other analog pins) for input with built-in pullups
+      pinMode(m_inPins[i], INPUT_PULLUP);
+    }
   }
   // initialize the state map for the current state of all the keys
   for (int i = 0; i < m_noOutPins; i++) {
@@ -180,9 +186,9 @@ void Keyboard::enableKeyboardPins() {
 }
 
 // do internal processing of the keyboard state
-void Keyboard::loop() {
-  // get the current time
-  unsigned long t = millis();
+void Keyboard::loop(unsigned long t) {
+  // get the current time if not supplied
+  if (t == 0) t = millis();
   Action  action;
 
   // scan all the keys and take the appropriate action
@@ -192,7 +198,12 @@ void Keyboard::loop() {
 
     // scan through each key in the row and see what needs to be done
     for (int j = 0; j < m_noInPins; j++) {
-      bool pressed = !digitalRead(m_inPins[j]);
+      bool pressed;
+      if (m_inPins[j] == A6 || m_inPins[j] == A7) {
+        pressed = analogRead(m_inPins[j]) < 512;
+      } else {
+        pressed = !digitalRead(m_inPins[j]);
+      }
       int index = action.m_index = i * m_noOutPins + j;
       action.m_shift = m_shifted;
       switch (m_keyState[index].m_mode) {
@@ -308,3 +319,4 @@ char Keyboard::getKey() {
   }
   return key;
 }
+#endif
